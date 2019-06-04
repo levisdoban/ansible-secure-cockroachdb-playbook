@@ -1,0 +1,139 @@
+---
+- name: Playbook for installing secure cockroach cluster
+  hosts: eva-db
+  vars:
+    cert_dir: [certificate location]
+    safe_cert_dir: [certificate safe location]   
+    remote_cert_dir: /root/certs
+    root_user_cert: root
+    load_balancer: [load balancer IP]
+    cockroach_version: v19.1.1
+  gather_facts: no
+  any_errors_fatal: false
+  become: yes
+  tasks:
+    - name: Update and upgrade apt packages
+      become: true
+      apt:
+        upgrade: yes
+        update_cache: yes
+        cache_valid_time: 86400
+
+    - name: Install ntp
+      yum: name=ntp state=present
+      tags: ntp
+
+    - name: Configure ntp file
+      template: src=ntp.conf dest=/etc/ntp.conf
+      tags: ntp
+      
+
+    - name: Restart ntp service
+      service: name=ntp state=restarted
+      tags: ntp  
+
+    - name: Get internal IP
+      shell: ifconfig eth1 | grep  -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}"  | head -n1 > /root/internalip.txt
+    
+    - name: Get External IP 
+      shell: ifconfig eth0 | grep  -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}"  | head -n1 > /root/externalip.txt
+      
+    - name: Get all internal IPs
+      command: cat /root/internalip.txt
+      register: internalips
+      changed_when: false
+
+    - name: Get all external IPs
+      command: cat /root/externalip.txt
+      register: externalips
+      changed_when: false
+
+    # # - debug: msg="{{internalips.stdout }}"
+
+    - name: Make Safe directory
+      become: no
+      local_action: file path={{safe_cert_dir}} state=directory
+
+    - name: Make Certs Directories      
+      become: no
+      local_action: file path={{cert_dir}}/{{ item }} state=directory
+      loop: 
+        - "{{externalips.stdout}}"
+        - "{{root_user_cert}}"
+
+    - name: create inventory file    
+      become: no
+      local_action: file path=internalnodes.txt state=touch
+      when: inventory_hostname == ansible_play_hosts[0]
+    
+    - name: make inventory of internal nodes ip    
+      become: no
+      local_action: shell echo {{internalips.stdout}} >> internalnodes.txt
+      
+
+    - name: Create root certificates 
+      become: no
+      local_action: shell cockroach cert create-ca --allow-ca-key-reuse --overwrite --certs-dir={{cert_dir}} --ca-key={{safe_cert_dir}}/ca.key
+      when: inventory_hostname == ansible_play_hosts[0]
+
+    - name: Copy cert file to root af folders
+      become: no
+      delegate_to: localhost
+      template: src={{cert_dir}}/ca.crt dest={{cert_dir}}/{{item}}/ca.crt
+      loop: 
+        - "{{externalips.stdout}}"
+        - "{{root_user_cert}}"
+
+    - name: Create certificates for each of the nodes
+      become: no
+      local_action: shell cockroach cert create-node --overwrite {{externalips.stdout}} {{internalips.stdout}} localhost 127.0.0.1 {{load_balancer}} --certs-dir={{cert_dir}}/{{externalips.stdout}} --ca-key={{safe_cert_dir}}/ca.key
+       
+    - name: Delete everything from remote
+      file: path={{remote_cert_dir}} state=absent
+
+    - name: Make remote cert directory
+      file: path={{remote_cert_dir}} state=directory
+     
+    - name: Uploading node certs to the servers
+      template: src={{cert_dir}}/{{externalips.stdout}}/node.crt dest={{remote_cert_dir}}/node.crt
+  
+    - name: Uploading node keys to the servers
+      template: src={{cert_dir}}/{{externalips.stdout}}/node.key dest={{remote_cert_dir}}/node.key
+    
+    - name: Upload the root keys to the servers
+      template: src={{safe_cert_dir}}/ca.key dest={{remote_cert_dir}}/ca.key
+
+    - name: Create root certificate
+      become: no
+      local_action: shell cockroach cert create-client root --certs-dir={{cert_dir}}/{{root_user_cert}} --ca-key={{safe_cert_dir}}/ca.key
+      when: inventory_hostname == ansible_play_hosts[0]
+   
+    - name: Download and unarchive cockroachdb
+      unarchive:
+        src: https://binaries.cockroachdb.com/cockroach-{{cockroach_version}}.linux-amd64.tgz
+        dest: /root
+        remote_src: yes
+
+    - name: Delete cockroach if exists
+      file: path=/usr/local/bin/cockroach state=absent
+   
+    # - name: Copy binary to usr
+    #   shell: cp -i /root/cockroach-{{cockroach_version}}.linux-amd64/cockroach /usr/local/bin
+
+
+    - name: read local ips
+      become: no
+      local_action: shell cat internalnodes.txt
+      register: localipthings
+
+    - name: Start cockroach db connections
+      shell: cockroach start --certs-dir={{remote_cert_dir}} --advertise-addr={{internalips.stdout}} --join={{localipthings.stdout_lines[0]}} {{localipthings.stdout_lines[1]}} {{localipthings.stdout_lines[2]}} --cache=.25 -max-sql-memory=.25 --background
+
+
+      
+
+      
+
+
+      
+
