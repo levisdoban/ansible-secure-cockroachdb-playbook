@@ -6,7 +6,7 @@
     safe_cert_dir: /home/elvis/EVA/eva-pipelines/ansible/safecerts   
     remote_cert_dir: /root/certs
     root_user_cert: root
-    load_balancer: 165.227.255.198
+    load_balancer: [loadbalancer]
     cockroach_version: v19.1.1
   gather_facts: no
   any_errors_fatal: false
