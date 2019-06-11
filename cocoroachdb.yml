@@ -6,7 +6,7 @@
     safe_cert_dir: /home/elvis/EVA/eva-pipelines/ansible/safecerts   
     remote_cert_dir: /root/certs
     root_user_cert: root
-    load_balancer: [loadbalancer]
+    load_balancer: [[loadbalancer]]
     cockroach_version: v19.1.1
   gather_facts: no
   any_errors_fatal: false
@@ -132,11 +132,8 @@
     - name: Start cockroach db connections
       shell: cockroach start --certs-dir={{remote_cert_dir}} --advertise-addr={{internalips.stdout}} --join={{localipthings.stdout_lines[0]}},{{localipthings.stdout_lines[1]}},{{localipthings.stdout_lines[2]}} --background
 
+    - name: Initialize cluster
+      local_action: shell cockroach init --certs-dir={{cert_dir}}/root --host={{externalips.stdout}}
+      when: inventory_hostname == ansible_play_hosts[0]
 
-      
-
-      
-
-
-      
-
+ 
