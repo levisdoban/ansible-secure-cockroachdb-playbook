@@ -2,11 +2,11 @@
 - name: Playbook for installing secure cockroach cluster
   hosts: eva-db
   vars:
-    cert_dir: [certificate location]
-    safe_cert_dir: [certificate safe location]   
+    cert_dir: /home/elvis/EVA/eva-pipelines/ansible/certs
+    safe_cert_dir: /home/elvis/EVA/eva-pipelines/ansible/safecerts   
     remote_cert_dir: /root/certs
     root_user_cert: root
-    load_balancer: [load balancer IP]
+    load_balancer: 165.227.255.198
     cockroach_version: v19.1.1
   gather_facts: no
   any_errors_fatal: false
@@ -79,7 +79,7 @@
     - name: Copy cert file to root af folders
       become: no
       delegate_to: localhost
-      template: src={{cert_dir}}/ca.crt dest={{cert_dir}}/{{item}}/ca.crt
+      template: src={{cert_dir}}/ca.crt dest={{cert_dir}}/{{item}}/ca.crt 
       loop: 
         - "{{externalips.stdout}}"
         - "{{root_user_cert}}"
@@ -95,13 +95,16 @@
       file: path={{remote_cert_dir}} state=directory
      
     - name: Uploading node certs to the servers
-      template: src={{cert_dir}}/{{externalips.stdout}}/node.crt dest={{remote_cert_dir}}/node.crt
+      template: src={{cert_dir}}/{{externalips.stdout}}/node.crt dest={{remote_cert_dir}}/node.crt mode=0400
   
     - name: Uploading node keys to the servers
-      template: src={{cert_dir}}/{{externalips.stdout}}/node.key dest={{remote_cert_dir}}/node.key
+      template: src={{cert_dir}}/{{externalips.stdout}}/node.key dest={{remote_cert_dir}}/node.key mode=0400
     
     - name: Upload the root keys to the servers
-      template: src={{safe_cert_dir}}/ca.key dest={{remote_cert_dir}}/ca.key
+      template: src={{safe_cert_dir}}/ca.key dest={{remote_cert_dir}}/ca.key mode=0400
+
+    - name: Upload the root cert to the servers
+      template: src={{cert_dir}}/ca.crt dest={{remote_cert_dir}}/ca.crt mode=0400
 
     - name: Create root certificate
       become: no
@@ -117,8 +120,8 @@
     - name: Delete cockroach if exists
       file: path=/usr/local/bin/cockroach state=absent
    
-    # - name: Copy binary to usr
-    #   shell: cp -i /root/cockroach-{{cockroach_version}}.linux-amd64/cockroach /usr/local/bin
+    - name: Copy binary to usr
+      shell: cp -i /root/cockroach-{{cockroach_version}}.linux-amd64/cockroach /usr/local/bin
 
 
     - name: read local ips
@@ -127,7 +130,7 @@
       register: localipthings
 
     - name: Start cockroach db connections
-      shell: cockroach start --certs-dir={{remote_cert_dir}} --advertise-addr={{internalips.stdout}} --join={{localipthings.stdout_lines[0]}} {{localipthings.stdout_lines[1]}} {{localipthings.stdout_lines[2]}} --cache=.25 -max-sql-memory=.25 --background
+      shell: cockroach start --certs-dir={{remote_cert_dir}} --advertise-addr={{internalips.stdout}} --join={{localipthings.stdout_lines[0]}},{{localipthings.stdout_lines[1]}},{{localipthings.stdout_lines[2]}} --background
 
 
       
