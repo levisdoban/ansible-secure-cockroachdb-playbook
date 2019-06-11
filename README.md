@@ -1,6 +1,6 @@
 # ansible-secure-cockroachdb-playbook
-Ansible playbook for installing secure cockroach db cluster. 
+Ansible playbook for installing and initializing secure cockroach db cluster. 
+Prerequisite:
 
 
-Run this command to initialize the cluster:
-cockroach init --certs-dir=$CERT_DIRECTORY/root --host=[External Node IP]
+
